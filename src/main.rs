@@ -9,6 +9,7 @@ enum Token {
     Class(String),
     NegClass(String),
     OneOrMore(Box<Token>),
+    ZeroOrOne(Box<Token>),
 }
 
 fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
@@ -31,12 +32,16 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
         match c {
             '+' => {
                 if let Some(last_token) = tokens.pop() {
-                    if let Token::OneOrMore(_) = last_token {
-                        panic!("Cannot apply '+' to a '+' token");
-                    }
                     tokens.push(Token::OneOrMore(Box::new(last_token)));
                 } else {
                     panic!("'+' cannot be the first token");
+                }
+            }
+            '?' => {
+                if let Some(last_token) = tokens.pop() {
+                    tokens.push(Token::ZeroOrOne(Box::new(last_token)));
+                } else {
+                    panic!("'?' cannot be the first token");
                 }
             }
             '\\' => {
@@ -107,6 +112,14 @@ fn matchhere(input_chars: &[char], tokens: &[Token], anchor_end: bool) -> bool {
         Token::OneOrMore(inner_token) => {
             matchoneormore(input_chars, inner_token, &tokens[1..], anchor_end)
         }
+        Token::ZeroOrOne(inner_token) => {
+            if !input_chars.is_empty() && matchone(input_chars[0], inner_token) {
+                if matchhere(&input_chars[1..], &tokens[1..], anchor_end) {
+                    return true;
+                }
+            }
+            matchhere(input_chars, &tokens[1..], anchor_end)
+        }
         _ => {
             if !input_chars.is_empty() && matchone(input_chars[0], &tokens[0]) {
                 matchhere(&input_chars[1..], &tokens[1..], anchor_end)
@@ -141,7 +154,7 @@ fn matchone(input_char: char, token: &Token) -> bool {
         Token::Word => input_char.is_ascii_alphanumeric() || input_char == '_',
         Token::Class(s) => s.chars().any(|c| input_char == c),
         Token::NegClass(s) => s.chars().all(|c| input_char != c),
-        Token::OneOrMore(_) => panic!("OneOrMore should be handled in match_pattern"),
+        _ => panic!("Quantifier token should be handled in matchhere"),
     }
 }
 
