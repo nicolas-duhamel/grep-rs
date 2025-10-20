@@ -2,6 +2,7 @@ use std::env;
 use std::io;
 use std::process;
 
+#[derive(Debug, Clone)]
 enum Token {
     Literal(char),
     Digit,
@@ -11,6 +12,7 @@ enum Token {
     NegClass(String),
     OneOrMore(Box<Token>),
     ZeroOrOne(Box<Token>),
+    Alternation(Vec<String>),
 }
 
 fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
@@ -82,6 +84,20 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
                     tokens.push(Token::Class(class_content));
                 }
             }
+            '(' => {
+                let mut alternation_content = String::new();
+                while let Some(ch) = chars.next() {
+                    if ch == ')' {
+                        break;
+                    }
+                    alternation_content.push(ch);
+                }
+                let options: Vec<String> = alternation_content
+                    .split('|')
+                    .map(|s| s.to_string())
+                    .collect();
+                tokens.push(Token::Alternation(options));
+            }
             _ => tokens.push(Token::Literal(c)),
         }
     }
@@ -90,16 +106,15 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
 }
 
 // see https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
-fn match_pattern(input_line: &str, pattern: &str) -> bool {
+fn match_pattern(text: &str, pattern: &str) -> bool {
     let (anchor_start, anchor_end, tokens) = tokenize_pattern(pattern);
-    let input_chars: Vec<char> = input_line.chars().collect();
 
     if anchor_start {
-        return matchhere(&input_chars, &tokens, anchor_end);
+        return matchhere(text, &tokens, anchor_end);
     }
 
-    for i in 0..input_chars.len() {
-        if matchhere(&input_chars[i..], &tokens, anchor_end) {
+    for i in 0..text.len() {
+        if matchhere(&text[i..], &tokens, anchor_end) {
             return true;
         }
     }
@@ -107,26 +122,36 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     false
 }
 
-fn matchhere(input_chars: &[char], tokens: &[Token], anchor_end: bool) -> bool {
+fn matchhere(text: &str, tokens: &[Token], anchor_end: bool) -> bool {
     if tokens.is_empty() {
-        return !anchor_end || input_chars.is_empty();
+        return !anchor_end || text.is_empty();
     }
 
     match &tokens[0] {
         Token::OneOrMore(inner_token) => {
-            matchoneormore(input_chars, inner_token, &tokens[1..], anchor_end)
+            matchoneormore(text, inner_token, &tokens[1..], anchor_end)
         }
         Token::ZeroOrOne(inner_token) => {
-            if !input_chars.is_empty() && matchone(input_chars[0], inner_token) {
-                if matchhere(&input_chars[1..], &tokens[1..], anchor_end) {
+            if !text.is_empty() && matchone(text.chars().next().unwrap(), inner_token) {
+                if matchhere(&text[1..], &tokens[1..], anchor_end) {
                     return true;
                 }
             }
-            matchhere(input_chars, &tokens[1..], anchor_end)
+            matchhere(text, &tokens[1..], anchor_end)
+        }
+        Token::Alternation(options) => {
+            for option in options {
+                if text.starts_with(option)
+                    && matchhere(&text[option.len()..], &tokens[1..], anchor_end)
+                {
+                    return true;
+                }
+            }
+            false
         }
         _ => {
-            if !input_chars.is_empty() && matchone(input_chars[0], &tokens[0]) {
-                matchhere(&input_chars[1..], &tokens[1..], anchor_end)
+            if !text.is_empty() && matchone(text.chars().next().unwrap(), &tokens[0]) {
+                matchhere(&text[1..], &tokens[1..], anchor_end)
             } else {
                 false
             }
@@ -134,31 +159,26 @@ fn matchhere(input_chars: &[char], tokens: &[Token], anchor_end: bool) -> bool {
     }
 }
 
-fn matchoneormore(
-    input_chars: &[char],
-    inner_token: &Token,
-    tokens: &[Token],
-    anchor_end: bool,
-) -> bool {
-    if input_chars.is_empty() || !matchone(input_chars[0], inner_token) {
+fn matchoneormore(text: &str, inner_token: &Token, tokens: &[Token], anchor_end: bool) -> bool {
+    if text.is_empty() || !matchone(text.chars().next().unwrap(), inner_token) {
         return false;
     }
-    for i in 1..input_chars.len() {
-        if matchhere(&input_chars[i..], &tokens[1..], anchor_end) {
+    for i in 1..text.len() {
+        if matchhere(&text[i..], &tokens[1..], anchor_end) {
             return true;
         }
     }
     false
 }
 
-fn matchone(input_char: char, token: &Token) -> bool {
+fn matchone(next_char: char, token: &Token) -> bool {
     match token {
-        Token::Literal(c) => input_char == *c,
-        Token::Digit => input_char.is_ascii_digit(),
-        Token::Word => input_char.is_ascii_alphanumeric() || input_char == '_',
-        Token::Wildcard => input_char != '\n',
-        Token::Class(s) => s.chars().any(|c| input_char == c),
-        Token::NegClass(s) => s.chars().all(|c| input_char != c),
+        Token::Literal(c) => next_char == *c,
+        Token::Digit => next_char.is_ascii_digit(),
+        Token::Word => next_char.is_ascii_alphanumeric() || next_char == '_',
+        Token::Wildcard => next_char != '\n',
+        Token::Class(s) => s.chars().any(|c| next_char == c),
+        Token::NegClass(s) => s.chars().all(|c| next_char != c),
         _ => panic!("Quantifier token should be handled in matchhere"),
     }
 }
