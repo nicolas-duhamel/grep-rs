@@ -108,13 +108,14 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
 // see https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 fn match_pattern(text: &str, pattern: &str) -> bool {
     let (anchor_start, anchor_end, tokens) = tokenize_pattern(pattern);
+    let text_chars: Vec<char> = text.chars().collect();
 
     if anchor_start {
-        return matchhere(text, &tokens, anchor_end);
+        return matchhere(&text_chars, &tokens, anchor_end);
     }
 
-    for i in 0..text.len() {
-        if matchhere(&text[i..], &tokens, anchor_end) {
+    for i in 0..text_chars.len() {
+        if matchhere(&text_chars[i..], &tokens, anchor_end) {
             return true;
         }
     }
@@ -122,27 +123,27 @@ fn match_pattern(text: &str, pattern: &str) -> bool {
     false
 }
 
-fn matchhere(text: &str, tokens: &[Token], anchor_end: bool) -> bool {
+fn matchhere(text_chars: &[char], tokens: &[Token], anchor_end: bool) -> bool {
     if tokens.is_empty() {
-        return !anchor_end || text.is_empty();
+        return !anchor_end || text_chars.is_empty();
     }
 
     match &tokens[0] {
         Token::OneOrMore(inner_token) => {
-            matchoneormore(text, inner_token, &tokens[1..], anchor_end)
+            matchoneormore(text_chars, inner_token, &tokens[1..], anchor_end)
         }
         Token::ZeroOrOne(inner_token) => {
-            if !text.is_empty() && matchone(text.chars().next().unwrap(), inner_token) {
-                if matchhere(&text[1..], &tokens[1..], anchor_end) {
+            if !text_chars.is_empty() && matchone(text_chars[0], inner_token) {
+                if matchhere(&text_chars[1..], &tokens[1..], anchor_end) {
                     return true;
                 }
             }
-            matchhere(text, &tokens[1..], anchor_end)
+            matchhere(text_chars, &tokens[1..], anchor_end)
         }
         Token::Alternation(options) => {
             for option in options {
-                if text.starts_with(option)
-                    && matchhere(&text[option.len()..], &tokens[1..], anchor_end)
+                if text_chars.starts_with(&option.chars().collect::<Vec<char>>())
+                    && matchhere(&text_chars[option.len()..], &tokens[1..], anchor_end)
                 {
                     return true;
                 }
@@ -150,8 +151,8 @@ fn matchhere(text: &str, tokens: &[Token], anchor_end: bool) -> bool {
             false
         }
         _ => {
-            if !text.is_empty() && matchone(text.chars().next().unwrap(), &tokens[0]) {
-                matchhere(&text[1..], &tokens[1..], anchor_end)
+            if !text_chars.is_empty() && matchone(text_chars[0], &tokens[0]) {
+                matchhere(&text_chars[1..], &tokens[1..], anchor_end)
             } else {
                 false
             }
@@ -159,12 +160,17 @@ fn matchhere(text: &str, tokens: &[Token], anchor_end: bool) -> bool {
     }
 }
 
-fn matchoneormore(text: &str, inner_token: &Token, tokens: &[Token], anchor_end: bool) -> bool {
-    if text.is_empty() || !matchone(text.chars().next().unwrap(), inner_token) {
+fn matchoneormore(
+    text_chars: &[char],
+    inner_token: &Token,
+    tokens: &[Token],
+    anchor_end: bool,
+) -> bool {
+    if text_chars.is_empty() || !matchone(text_chars[0], inner_token) {
         return false;
     }
-    for i in 1..text.len() {
-        if matchhere(&text[i..], &tokens[1..], anchor_end) {
+    for i in 1..text_chars.len() {
+        if matchhere(&text_chars[i..], &tokens[1..], anchor_end) {
             return true;
         }
     }
