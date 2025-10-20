@@ -6,6 +6,7 @@ enum Token {
     Literal(char),
     Digit,
     Word,
+    Wildcard,
     Class(String),
     NegClass(String),
     OneOrMore(Box<Token>),
@@ -43,6 +44,9 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
                 } else {
                     panic!("'?' cannot be the first token");
                 }
+            }
+            '.' => {
+                tokens.push(Token::Wildcard);
             }
             '\\' => {
                 if let Some(next) = chars.next() {
@@ -152,6 +156,7 @@ fn matchone(input_char: char, token: &Token) -> bool {
         Token::Literal(c) => input_char == *c,
         Token::Digit => input_char.is_ascii_digit(),
         Token::Word => input_char.is_ascii_alphanumeric() || input_char == '_',
+        Token::Wildcard => input_char != '\n',
         Token::Class(s) => s.chars().any(|c| input_char == c),
         Token::NegClass(s) => s.chars().all(|c| input_char != c),
         _ => panic!("Quantifier token should be handled in matchhere"),
