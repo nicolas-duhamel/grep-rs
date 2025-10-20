@@ -2,6 +2,7 @@ use std::env;
 use std::io;
 use std::process;
 
+#[derive(Debug, Clone)]
 enum Token {
     Literal(char),
     Digit,
@@ -10,10 +11,22 @@ enum Token {
     NegClass(String),
 }
 
-fn tokenize_pattern(pattern: &str) -> Vec<Token> {
+fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
     let mut tokens = Vec::new();
-    let mut chars = pattern.chars().peekable();
+    let mut anchor_start = false;
+    let mut anchor_end = false;
 
+    if pattern.starts_with('^') {
+        anchor_start = true;
+        pattern = &pattern[1..];
+    }
+
+    if pattern.ends_with('$') {
+        anchor_end = true;
+        pattern = &pattern[..pattern.len() - 1];
+    }
+
+    let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             '\\' => {
@@ -54,18 +67,24 @@ fn tokenize_pattern(pattern: &str) -> Vec<Token> {
         }
     }
 
-    tokens
+    (anchor_start, anchor_end, tokens)
 }
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    let tokens = tokenize_pattern(pattern);
+    let (anchor_start, anchor_end, tokens) = tokenize_pattern(pattern);
     let input_chars: Vec<char> = input_line.chars().collect();
 
     'input_loop: for i in 0..input_line.len() {
+        if (anchor_start && i != 0) || (i + tokens.len() > input_chars.len()) {
+            break;
+        }
         for (j, token) in tokens.iter().enumerate() {
             if i + j >= input_chars.len() || !matchone(input_chars[i + j], token) {
                 continue 'input_loop;
             }
+        }
+        if anchor_end && i + tokens.len() != input_line.len() {
+            continue;
         }
         return true;
     }
@@ -93,9 +112,12 @@ fn main() {
 
     io::stdin().read_line(&mut input_line).unwrap();
 
+    input_line = input_line.trim_end().to_string();
     if match_pattern(&input_line, &pattern) {
-        process::exit(0)
+        println!("This is a match");
+        process::exit(0);
     } else {
-        process::exit(1)
+        println!("This is not a match");
+        process::exit(1);
     }
 }
