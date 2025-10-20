@@ -2,13 +2,13 @@ use std::env;
 use std::io;
 use std::process;
 
-#[derive(Debug, Clone)]
 enum Token {
     Literal(char),
     Digit,
     Word,
     Class(String),
     NegClass(String),
+    OneOrMore(Box<Token>),
 }
 
 fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
@@ -29,6 +29,16 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
+            '+' => {
+                if let Some(last_token) = tokens.pop() {
+                    if let Token::OneOrMore(_) = last_token {
+                        panic!("Cannot apply '+' to a '+' token");
+                    }
+                    tokens.push(Token::OneOrMore(Box::new(last_token)));
+                } else {
+                    panic!("'+' cannot be the first token");
+                }
+            }
             '\\' => {
                 if let Some(next) = chars.next() {
                     match next {
@@ -70,23 +80,56 @@ fn tokenize_pattern(mut pattern: &str) -> (bool, bool, Vec<Token>) {
     (anchor_start, anchor_end, tokens)
 }
 
+// see https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
     let (anchor_start, anchor_end, tokens) = tokenize_pattern(pattern);
     let input_chars: Vec<char> = input_line.chars().collect();
 
-    'input_loop: for i in 0..input_line.len() {
-        if (anchor_start && i != 0) || (i + tokens.len() > input_chars.len()) {
-            break;
+    if anchor_start {
+        return matchhere(&input_chars, &tokens, anchor_end);
+    }
+
+    for i in 0..input_chars.len() {
+        if matchhere(&input_chars[i..], &tokens, anchor_end) {
+            return true;
         }
-        for (j, token) in tokens.iter().enumerate() {
-            if i + j >= input_chars.len() || !matchone(input_chars[i + j], token) {
-                continue 'input_loop;
+    }
+
+    false
+}
+
+fn matchhere(input_chars: &[char], tokens: &[Token], anchor_end: bool) -> bool {
+    if tokens.is_empty() {
+        return !anchor_end || input_chars.is_empty();
+    }
+
+    match &tokens[0] {
+        Token::OneOrMore(inner_token) => {
+            matchoneormore(input_chars, inner_token, &tokens[1..], anchor_end)
+        }
+        _ => {
+            if !input_chars.is_empty() && matchone(input_chars[0], &tokens[0]) {
+                matchhere(&input_chars[1..], &tokens[1..], anchor_end)
+            } else {
+                false
             }
         }
-        if anchor_end && i + tokens.len() != input_line.len() {
-            continue;
+    }
+}
+
+fn matchoneormore(
+    input_chars: &[char],
+    inner_token: &Token,
+    tokens: &[Token],
+    anchor_end: bool,
+) -> bool {
+    if input_chars.is_empty() || !matchone(input_chars[0], inner_token) {
+        return false;
+    }
+    for i in 1..input_chars.len() {
+        if matchhere(&input_chars[i..], &tokens[1..], anchor_end) {
+            return true;
         }
-        return true;
     }
     false
 }
@@ -98,6 +141,7 @@ fn matchone(input_char: char, token: &Token) -> bool {
         Token::Word => input_char.is_ascii_alphanumeric() || input_char == '_',
         Token::Class(s) => s.chars().any(|c| input_char == c),
         Token::NegClass(s) => s.chars().all(|c| input_char != c),
+        Token::OneOrMore(_) => panic!("OneOrMore should be handled in match_pattern"),
     }
 }
 
